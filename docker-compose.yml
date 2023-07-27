@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# Copyright (C) 2023 Meta Inc
+# Author: Nikolay Yurin <yurinnick@meta.com>
+
+version: '3'
+services:
+  patchwork_webhook:
+    container_name: 'kernelci-patchwork'
+    build:
+      context: '.'
+    ports:
+      - '${PATCHWORK_WEBHOOK_HOST_PORT:-8005}:8000'
+    environment:
+      - API_ENV=localhost

@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "kernelci-patchwork"
+version = "0.1.0"
+description = "KernelCI Patchwork Webhook"
+authors = ["Nikolay Yurin <yurinnick@meta.com>"]
+license = "LGPLv2+"
+readme = "README.md"
+packages = [{include = "kernelci_patchwork"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "0.68.1"
+bson = "^0.5.10"
+kernelci = {git = "https://github.com/kernelci/kernelci-core.git"}
+fastapi-versioning = "^0.10.0"
+
+
+[tool.poetry.group.runtime.dependencies]
+uvicorn = "^0.23.1"
+
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.7.0"
+pylint = "^2.17.4"
+pycodestyle = "^2.10.0"
+isort = "^5.12.0"
+autopep8 = "^2.0.2"
+flake8 = "^6.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -1,0 +1,9 @@
+api_configs:
+  localhost:
+    url: http://localhost:8001
+
+  docker:
+    url: http://api:8000
+
+  staging.kernelci.org:
+    url: https://staging.kernelci.org:9000
