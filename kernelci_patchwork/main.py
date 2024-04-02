@@ -8,16 +8,18 @@
 """KernelCI Patchwork Webhook main module"""
 import logging
 import os
+from urllib.parse import urljoin
 
 import kernelci.api
 import kernelci.config
 import requests.exceptions
-from fastapi import Depends, FastAPI, HTTPException, status as http_status
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi import status as http_status
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi_versioning import VersionedFastAPI
 
-from .models import WebhookPatchwork
+from .models import PatchworkWebhook
 
 CONFIG = kernelci.config.load("config/patchwork.yaml")
 ENVIRONMENT = os.environ.get("API_ENV", "localhost")
@@ -39,49 +41,61 @@ async def status():
     return {"service": "KernelCI Patchwork Webhook API", "status": "ok"}
 
 
-@app.post("/webhook/patchworks")
+def get_checkout_node(api, tree, branch):
+    raise NotImplementedError()
+
+
+@app.post("/webhook/patchwork")
 async def post_webhook(
-    webhook_data: WebhookPatchwork,
+    webhook_data: PatchworkWebhook,
     credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
 ):
-    """Patchwork webhook handler"""
-    if not webhook_data.patches:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Patches list is empty"
-        )
+    """Patchwork event webhook handler"""
 
-    head_patch_hash = webhook_data.patches[0].hash
-    node_config = {
-        "name": "checkout",
-        "path": ["checkout"],
-        "group": "patchwork-nodes",
-        "revision": {
-            "tree": webhook_data.revision.tree,
-            "url": webhook_data.revision.url,
-            "commit": "HEAD",
-            "branch": webhook_data.revision.branch,
-            "describe": (
-                f"{webhook_data.revision.tree} tree"
-                f" - {webhook_data.revision.branch} branch"
-                f" - {head_patch_hash} patch"
-            ),
-        },
+    project_name = webhook_data.event_data["link_name"]
+    try:
+        project_config = CONFIG["projects"][project_name]
+    except KeyError as e:
+        err_msg = "No configuration found for {project_name} patchwork project"
+        logger.error(err_msg)
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST, detail=err_msg
+        ) from e
+
+    api_config = CONFIG["api_configs"][ENVIRONMENT]
+    api = kernelci.api.get_api(api_config, credentials.credentials)
+
+    checkout_node = get_checkout_node(
+        api=api, tree=project_config["tree"], branch=project_config["branch"]
+    )
+
+    patch_metadata = webhook_data.event_data["payload"]["patch"]
+    patch_url = urljoin(patch_metadata["web_url"], "raw/?series=*")
+    # Remove <> surrounding msgid and append .patch extention
+    patch_name = "{}.patch".format(patch_metadata["msgid"][1:-1])
+
+    patchset_node = {
+        "name": "patchset",
+        "path": ["checkout", "patchset"],
+        "parent": checkout_node["id"],
+        "artifacts": {patch_name: patch_url},
         "data": {
             "patchwork": {
-                "version": 1,
-                "payload": jsonable_encoder(webhook_data),
+                "patches": {
+                    patch_name: patch_metadata["id"],
+                }
             }
         },
     }
 
-    api_config = CONFIG["api_configs"][ENVIRONMENT]
-    api = kernelci.api.get_api(api_config, credentials.credentials)
     try:
-        node = api.create_node(node_config)
+        node = api.create_node(patchset_node)
         logger.info(f"Succesfully scheduled a new node: {node}")
     except requests.exceptions.HTTPError as e:
-        raise HTTPException(status_code=e.response.status_code)
+        logger.error("API request failed: %s", e)
+        raise HTTPException(status_code=e.response.status_code) from e
     except requests.exceptions.ConnectionError as e:
-        logger.error("bla")
-        raise HTTPException(status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE)
-    return {}
+        logger.error("API connection failed: %s", e)
+        raise HTTPException(status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE) from e
+
+    return node

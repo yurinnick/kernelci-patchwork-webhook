@@ -1,3 +1,0 @@
-[pydocstyle]
-match = kernelci_patchwork/*.py
-max_line_length = 120
